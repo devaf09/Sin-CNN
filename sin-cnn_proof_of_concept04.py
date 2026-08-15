@@ -217,3 +217,4 @@ if __name__ == "__main__":
             
     print("\n【光AIによる生成文章結果】")
     print("".join(generated_text))
+ 
