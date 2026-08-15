@@ -18,7 +18,7 @@
 
 ```bash
 # 1. リポジトリのクローンと移動
-git clone https://github.com
+git clone https://github.com/devaf09/Sin-CNN/
 cd Sin-CNN
 
 # 2. 仮想環境の作成と有効化
