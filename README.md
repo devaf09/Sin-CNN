@@ -90,8 +90,8 @@ python -m venv venv
 # 3. pipのアップグレード
 python -m pip install --upgrade pip
 
-# 4. CPU版 PyTorch、numpy のインストール
-# (開発サーバーにGPUがない点、将来的にIoT機器へ軽量デプロイすることを考慮しCPU版を採用)
+# 4. GPU版 PyTorch、numpy のインストール
+# Windowsで試すなら…たぶん皆さんいいGPU積んでらっしゃるのではないかと…
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
 # 5. 可視化ツールのインストール（追加）
