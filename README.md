@@ -13,22 +13,20 @@
 git clone https://github.com/devaf09/Sin-CNN/
 
 cd Sin-CNN
-
 python3 -m venv venv
-
 source venv/bin/activate
-
 pip install --upgrade pip
-
 //CPU版PyTorchと周辺ライブラリをインストール
-
+//開発環境がGPUを持たないサーバーのため、&いづれはIoT機器で動かせる軽量なAIとするため。
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-
 //追加
-
 pip install matplotlib
-
 python sin-cnnXXX.py
+
+
+
+
+
 
 
 
@@ -207,10 +205,16 @@ Step 002: 複素数バックプロパゲーションの実装と、連続体入�
 
 
 状況：
+
 　sin-cnn001.py～005　　　　 :簡単な実証（失敗）
 
 　sin-cnn_proof_of_concept01：概念実証
 
+　sin-cnn_proof_of_concept02：失敗
+
+　sin-cnn_proof_of_concept03：文字認識の実験
+
+　sin-cnn_proof_of_concept04：LLMの作成に希望がもてるか、テスト用。
 
 
 
