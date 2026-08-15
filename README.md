@@ -13,14 +13,23 @@
 git clone https://github.com/devaf09/Sin-CNN/
 
 cd Sin-CNN
+
 python3 -m venv venv
+
 source venv/bin/activate
+
 pip install --upgrade pip
+
 //CPU版PyTorchと周辺ライブラリをインストール
+
 //開発環境がGPUを持たないサーバーのため、&いづれはIoT機器で動かせる軽量なAIとするため。
+
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
 //追加
+
 pip install matplotlib
+
 python sin-cnnXXX.py
 
 
