@@ -17,77 +17,41 @@
 
 
 ```bash
-
 # 1. リポジトリのクローンと移動
-
 git clone https://github.com
-
 cd Sin-CNN
 
-
-
 # 2. 仮想環境の作成と有効化
-
 python3 -m venv venv
-
 source venv/bin/activate
 
-
-
 # 3. pipのアップグレード
-
 pip install --upgrade pip
 
-
-
 # 4. CPU版 PyTorch、numpy のインストール
-
 # (開発サーバーにGPUがない点、将来的にIoT機器へ軽量デプロイすることを考慮しCPU版を採用)
-
 pip install torch numpy --index-url https://download.pytorch.org/whl/cpu
 
-
-
 # 5. 可視化ツールのインストール（追加）
-
 pip install matplotlib
 
 
-
 # 実行
-
 python sin-cnn_proof_of_concept04.py
-
-
-
 
 
 #メモリの少ないサーバーで動かす時は以下で調整
 
 # 1.のあと
-
 mkdir -p ~/tmp
-
 export TMPDIR=~/tmp
 
-
-
 # 4 をこっちに
-
 pip install --no-cache-dir torch numpy --index-url https://download.pytorch.org/whl/cpu
 
 
-
-
-
-
-
 # 次回からは
-
 source venv/bin/activate
-
-
-
 ```
 
 
