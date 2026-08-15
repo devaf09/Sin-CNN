@@ -129,7 +129,8 @@ class LargePhotonicLLM(nn.Module):
 
     def forward(self, token_id):
         embed = self.token_embedding(token_id).view(-1, self.grid_size, self.grid_size)
-        U = torch.complex(torch.sort(embed).values, torch.zeros_like(embed)) + 1e-8
+        #U = torch.complex(torch.sort(embed).values, torch.zeros_like(embed)) + 1e-8 20260815修正
+        U = torch.complex(embed, torch.zeros_like(embed)) + 1e-8
         
         for i in range(self.num_layers):
             U = self.phase_layers[i](U)
@@ -171,7 +172,8 @@ if __name__ == "__main__":
     
     # C. 16層・512軸大型光LLMモデル構築
     model = LargePhotonicLLM(vocab_size=vocab_size, grid_size=IMAGE_SIZE, num_freqs=NUM_FREQS, num_layers=NUM_LAYERS).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    #optimizer = torch.optim.Adam(model.parameters(), lr=0.01) 20260815修正
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
     
     # D. 16層モデルでの学習 (120 エポック)
@@ -217,4 +219,3 @@ if __name__ == "__main__":
             
     print("\n【光AIによる生成文章結果】")
     print("".join(generated_text))
- 

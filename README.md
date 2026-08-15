@@ -35,13 +35,11 @@ pip install torch numpy --index-url https://download.pytorch.org/whl/cpu
 # 5. 可視化ツールのインストール（追加）
 pip install matplotlib
 
-
 # 実行
 python sin-cnn_proof_of_concept04.py
 
 
 #メモリの少ないサーバーで動かす時は以下で調整
-
 # 1.のあと
 mkdir -p ~/tmp
 export TMPDIR=~/tmp
@@ -52,6 +50,8 @@ pip install --no-cache-dir torch numpy --index-url https://download.pytorch.org/
 
 # 次回からは
 source venv/bin/activate
+
+で環境に入れます。
 ```
 
 
