@@ -57,7 +57,7 @@ pip install torch numpy --index-url https://download.pytorch.org/whl/cpu
 pip install matplotlib
 
 # 実行
-python sin-cnn_proof_of_concept04.py
+python sin-cnn_proof_of_concept05.py
 
 
 #メモリの少ないサーバーで動かす時は以下で調整
@@ -71,6 +71,38 @@ pip install --no-cache-dir torch numpy --index-url https://download.pytorch.org/
 
 # 次回からは
 source venv/bin/activate
+
+で環境に入れます。
+```
+
+
+windows(cmd)の場合（GPU使用）
+
+```cmd
+# 1. リポジトリのクローンと移動
+git clone https://github.com/devaf09/Sin-CNN/
+cd Sin-CNN
+
+# 2. 仮想環境の作成と有効化
+python -m venv venv
+.\venv\Scripts\activate.bat
+
+# 3. pipのアップグレード
+python -m pip install --upgrade pip
+
+# 4. CPU版 PyTorch、numpy のインストール
+# (開発サーバーにGPUがない点、将来的にIoT機器へ軽量デプロイすることを考慮しCPU版を採用)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+# 5. 可視化ツールのインストール（追加）
+pip install matplotlib
+
+# 実行
+python sin-cnn_proof_of_concept05.py
+
+
+# 次回からは
+.\venv\Scripts\activate.bat
 
 で環境に入れます。
 ```
