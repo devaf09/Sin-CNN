@@ -299,6 +299,7 @@ Step 002: 複素数バックプロパゲーションの実装と、連続体入�
 　./Proof_of_concept/sin-cnn_proof_of_concept05：LLM機能の試験 (短い構文 -v4)
 
 　.//Training_and_output_testing/SinCosONN_LMM_IO_01/ :LLM入出力試験01
+　　　　　　　　　　　　　　　　　　　　　　　　　　　開発方針を整理しする。
 
 
 
