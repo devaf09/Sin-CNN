@@ -286,16 +286,19 @@ Step 002: 複素数バックプロパゲーションの実装と、連続体入�
 
 状況：
 
-　sin-cnn001.py～005　　　　 :簡単な実証（失敗）
+　./Proof_of_concept/sin-cnn001.py～005　　　　 :簡単な実証（失敗）
 
-　sin-cnn_proof_of_concept01：概念実証
+　./Proof_of_concept/sin-cnn_proof_of_concept01：概念実証
 
-　sin-cnn_proof_of_concept02：失敗
+　./Proof_of_concept/sin-cnn_proof_of_concept02：失敗
 
-　sin-cnn_proof_of_concept03：文字認識の実験
+　./Proof_of_concept/sin-cnn_proof_of_concept03：文字認識の実験
 
-　sin-cnn_proof_of_concept04：LLMの作成に希望がもてるか、テスト用。
+　./Proof_of_concept/sin-cnn_proof_of_concept04：LLMの作成に希望がもてるか、テスト用。
 
-　sin-cnn_proof_of_concept05：LLM機能の試験 (短い構文 -v4)
+　./Proof_of_concept/sin-cnn_proof_of_concept05：LLM機能の試験 (短い構文 -v4)
+
+　.//Training_and_output_testing/SinCosONN_LMM_IO_01/ :LLM入出力試験01
+
 
 
