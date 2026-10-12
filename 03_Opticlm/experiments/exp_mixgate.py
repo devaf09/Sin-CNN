@@ -10,10 +10,13 @@ scores.npz は exp_calib.py dump の出力 (リザバーの検証窓スコア)�
   ゲート2D  : 両方の確信度 (各4分位 = 16ビン) ごとに λ
 """
 import argparse
+import os
+import sys
 import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))  # opticlm.py は1つ上
 import exp_calib as C
 import opticlm as O
 

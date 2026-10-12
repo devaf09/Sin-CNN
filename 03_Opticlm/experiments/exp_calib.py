@@ -4,13 +4,17 @@
    python exp_calib.py dump cc100_v1m.txt scores_1m_d4096.npz --d 4096 [--gpu] [--max-chars N] [--limit 0]
 2. run   : 保存したスコアで写像を比べる (CPU のみ)。検証窓を交互に「当てはめ用 / 評価用」に分け、評価用の nll で比べる
    python exp_calib.py run scores_1m_d4096.npz
+3. run2  : power × 頻度^β と確信度ビンの組合せ (opticlm の binpow のもとになった比較)
+   python exp_calib.py run2 scores_1m_d4096.npz
 """
 import argparse
+import os
 import sys
 import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))  # opticlm.py は1つ上
 import opticlm as O
 
 
@@ -179,22 +183,6 @@ def rank_apply_P(S, P, mdl):
     return P / P.sum(1, keepdims=True)
 
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    sub = ap.add_subparsers(dest="cmd")
-    a = sub.add_parser("dump")
-    a.add_argument("corpus")
-    a.add_argument("out")
-    a.add_argument("--d", type=int, default=4096)
-    a.add_argument("--gpu", action="store_true")
-    a.add_argument("--max-chars", type=int, default=0)
-    a.add_argument("--limit", type=int, default=20000)
-    b = sub.add_parser("run")
-    b.add_argument("scores")
-    ns = ap.parse_args()
-    {"dump": dump, "run": run}.get(ns.cmd, lambda _: ap.print_help())(ns)
-
-
 # ---------------------------------------------------------------- 追加: ユニグラムとの積 (product of experts) と細かい a
 def fit_pou(S, y, uni, gammas=(1.0, 1.25, 1.5, 1.75, 2.0), betas=(-0.6, -0.4, -0.2, 0.0, 0.2), eps_l=(1e-4, 1e-3),
             mix=(0.8, 0.85, 0.9, 0.93, 0.96, 0.98, 0.99, 1.0)):
@@ -248,5 +236,22 @@ def run2(path):
     print(f"確信度ビン8 × (power×uni^β) {v2:.4f} ({v2 - base:+.4f})  ({time.time() - t0:.0f}s)")
 
 
-if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "run2":
-    run2(sys.argv[2])
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd")
+    a = sub.add_parser("dump")
+    a.add_argument("corpus")
+    a.add_argument("out")
+    a.add_argument("--d", type=int, default=4096)
+    a.add_argument("--gpu", action="store_true")
+    a.add_argument("--max-chars", type=int, default=0)
+    a.add_argument("--limit", type=int, default=20000)
+    b = sub.add_parser("run")
+    b.add_argument("scores")
+    c = sub.add_parser("run2", help="power x 頻度^beta と、確信度ビンとの組合せ (calibrate の binpow のもと)")
+    c.add_argument("scores")
+    ns = ap.parse_args()
+    if ns.cmd == "run2":
+        run2(ns.scores)
+    else:
+        {"dump": dump, "run": run}.get(ns.cmd, lambda _: ap.print_help())(ns)

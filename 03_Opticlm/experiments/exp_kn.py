@@ -5,10 +5,13 @@ python exp_kn.py model.npz corpus.txt [--gpu] [--limit 20000]
 リザバーは保存済みのモデル (--w-bits 32) の W を量子化・低ランク化して使う (bench と同じ構成)。評価窓と混合の重みの選び方は bench と同じ。
 """
 import argparse
+import os
+import sys
 import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))  # opticlm.py は1つ上
 import opticlm as O
 
 

@@ -12,10 +12,13 @@ model.npz は --w-bits 32 で保存したもの (量子化前の W が要る)。
 """
 import argparse
 import math
+import os
+import sys
 import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))  # opticlm.py は1つ上
 import opticlm as O
 
 

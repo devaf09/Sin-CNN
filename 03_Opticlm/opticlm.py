@@ -1,54 +1,49 @@
 """
-opticlm.py : 光学リザバー言語モデルのライブラリ (単一ファイル。numpy だけで動き、torch があれば GPU でも動く)
+opticlm.py : 光学リザバー言語モデル (単一ファイル。numpy だけで動き、torch があれば GPU でも動く)
 
-何ができるか
-  * 固定の「光学媒質」(乱数の位相板+伝搬+強度検出)で文脈を特徴にし、学習は線形の読み出し(閉形式のリッジ回帰)だけ。
-  * 学習は足し算 (A = ΣΦᵀΦ, B = ΣΦᵀY) なので、追加学習・取り消し・融合が厳密にできる。メモリはデータ量によらず固定。
-  * 次の1文字の確率 (predict / logprob)、生成 (generate)、保存/読み込み (save / load)。
+しくみ
+  * 固定の「光学媒質」(乱数の位相板 + 自由空間伝播 + 強度検出) で直近の数文字を特徴 Φ にし、
+    学習は線形の読み出し W だけ (閉形式のリッジ回帰: (A + λI) W = B、A = ΣΦᵀΦ, B = ΣΦᵀY)。
+  * 学習が足し算なので、追加学習・取り消し・融合・並列学習が厳密にできる。
+  * 光学媒質は seed から再現できるので、保存するのは読み出し W だけ。
+
+検証の結論 (詳細は RESULTS.md。CC-100 日本語 1000万文字)
+  * 言語モデルとしては n-gram (特に Kneser-Ney) に同じバイト数で負ける。読み出しの容量 (D×語彙) で頭打ちになる。
+  * 光学の特徴は、同じ次元のデジタルのランダム特徴と同等か、わずかに良い。回折 (位相板 + 伝播) は必須。
+  * 粗いアナログ素子で動く: W 4〜5bit (グループ量子化)、素子ばらつき 10%、検出器 光子100/画素・ADC 6bit で nll +0.04 程度。
 
 使い方 (Python から)
     import opticlm
     lm = opticlm.OpticalLM(grid=32, scales=(1, 2, 3, 4), backend="auto")   # auto: GPU があれば GPU
     lm.fit(["文書1", "文書2"])            # 追加学習 (リストの1要素=1文書。文書をまたぐ文脈は作らない)
-    lm.fit("さらに追加する文章")          # 何度でも足せる
-    lm.solve(1e-3)                        # 読み出しを解く (数秒〜数分)。追加学習のたびに解き直す
-    lm.calibrate(val_docs)                # 確率の較正 (検証用の文書で。predict / logprob / generate の前に1回)
+    lm.solve(1e-3)                        # 読み出しを解く。追加学習のたびに解き直す
+    opticlm.calibrate(lm, val_docs)       # 確率の較正 (検証用の文書で1回)
     lm.predict("今日は", k=5)             # [(文字, 確率), ...]
-    lm.generate("今日は", 80)             # 続きを生成
-    lm.forget("取り消したい文章")         # 学習済みの文章を厳密に取り消す (fit のときと同じ文章を渡す)
+    lm.generate("今日は", 80)
+    lm.forget("取り消したい文章")         # fit と同じ文章を渡すと厳密に取り消せる
     lm.save("model.npz")                  # 統計量つき (追加学習できる)
-    lm.save("infer.npz", stats=False, w_bits=8)   # 推論専用 (W を 8bit に量子化して小さく)
+    lm.save("infer.npz", stats=False, w_bits=4, w_group=256)   # 推論専用 (4bit + グループごとのスケール)
     lm = opticlm.load("model.npz")
-
-    # ファイルからまとめて (1行=1文書。検証分割・正則化の選択・較正まで自動):
-    lm, report = opticlm.train("corpus.txt", grid=64, scales=(1, 2, 3, 4), backend="auto")
+    lm, report = opticlm.train("corpus.txt", grid=64)          # ファイル (1行=1文書) から分割・学習・較正まで
 
 コマンドライン
-    python opticlm.py selftest                      # 動作確認 (GPU 実行の前に1回)
-    python opticlm.py train corpus.txt model.npz [--grid 64] [--scales 1,2,3,4] [--gpu]
-    python opticlm.py eval  model.npz corpus.txt    # 検証 (1行=1文書。7文書に1つを検証に使う)
+    python opticlm.py selftest                                  # 動作確認 (GPU 実行の前に1回)
+    python opticlm.py train corpus.txt model.npz [--grid 64] [--gpu | --workers 3]
+    python opticlm.py eval  model.npz corpus.txt
     python opticlm.py gen   model.npz "プロンプト" [--n 100]
-    python opticlm.py bench corpus.txt [--d 1024,2048,4096] [--gpu]    # 同じバイト数での n-gram との比較
-    python opticlm.py ablate corpus.txt [--d 4096] [--gpu]             # 特徴の増強オプションの効果を1表で比較
+    python opticlm.py bench corpus.txt [--d 4096,16384] [--gpu]   # 同じバイト数での n-gram との比較と、混合の比較
 
 物理設定 (cfg。同じ cfg のモデル同士だけ融合できる)
-    grid, scales   : 露光ごとの画素の一辺 / 各露光が見る直近の文字数 (総特徴数 D = 露光数 x 検出面数 x grid^2 + 1)
-    tails          : ((T, gamma[, "bag"]), ...) 減衰する長距離露光。直近 T 文字を gamma^k の振幅で重ねる (空洞の損失に相当)。
-                     "bag" を付けると位置ごとの位相板を使わず、文字の『集まり』(話題)だけを重ねる。遠い文字の位置は
-                     雑音になるので、長距離には bag + ref の組合せが理にかなう (ref の線形項が集まりの量を読む)
-    ref            : 参照光の強さ。0 なら強度 |U|^2 だけ。>0 なら |U + ref*R|^2 (ホログラフィの干渉検出。線形項も特徴になる)
-    taps           : 強度を読む層の番号 (例 (2,3))。既定は最後の層だけ。複数なら途中の面にもカメラを置く
-    detector       : {"photons": 平均画素あたりの光子数, "read": 読み出し雑音(平均強度比), "adc_bits": ADCのbit数}
-                     検出器の雑音と量子化の模擬。None/0 で理想的な検出。
-    layers, dist, wavelength, pitch, seed : 08 と同じ
+    grid, scales   : 露光ごとの画素の一辺 / 各露光が見る直近の文字数 (総特徴数 D = 露光数 × grid² + 1)
+    layers, dist, wavelength, pitch, seed : 位相板の枚数、層間の距離、波長、画素ピッチ、乱数の種
+    detector       : {"photons": 画素あたりの平均光子数, "read": 読み出し雑音 (平均強度比), "adc_bits": ADC のビット数}
+                     None で理想的な検出。雑音 (photons / read) があると取り消しは「ほぼ」になる。
 
 注意
-  * 雑音(photons / read)を入れると、取り消し(forget)は『ほぼ』になる (再測定のたびに雑音が違うため)。
-    理想検出 (既定) と ADC の量子化だけなら厳密に成り立つ。
-  * GPU 版の既定 (acc="fp32") は、1バッチ分の ΦᵀΦ を float32 で計算して float64 の A に足す。取り消し・融合の誤差は
-    1e-7 程度 (float32 の精度)。1e-15 の厳密さが必要なら backend="torch" と acc="fp64" (遅い) か numpy 版を使う。
-  * この環境(開発側)に GPU は無く、GPU 版は『numpy で torch を模した偽物』での照合までしか確認できていません。
-    必ず最初に `python opticlm.py selftest` を GPU のある環境で実行してください。
+  * GPU 版の既定 (acc="fp32") は 1バッチ分の ΦᵀΦ を float32 で計算して float64 の A に足す。取り消し・融合の誤差は 1e-6〜1e-7。
+    1e-16 の厳密さが要るなら numpy 版か acc="fp64"。
+  * 以前の版にあった増強オプション (tails / ref / taps / bag) は、実日本語で効果が無かったので削除した (RESULTS.md)。
+    それらを使って保存したモデルは読み込めない (既定値のまま保存したモデルは読み込める)。
 """
 import argparse
 import copy
@@ -67,29 +62,31 @@ except Exception:  # torch が無くても numpy 版は動く
     torch = None
 
 __all__ = ["OpticalLM", "TorchOpticalLM", "NgramLM", "load", "train", "evaluate", "calibrate", "sweep_lam",
-           "quantize_matrix", "lowrank_matrix", "size_bench", "ablate", "selftest", "split_docs", "read_docs", "fit_parallel"]
+           "quantize_matrix", "lowrank_matrix", "size_bench", "mix_compare", "mixture_nll", "selftest", "split_docs", "read_docs",
+           "fit_parallel", "grid_for_D"]
 
 PAD_KEY = 0x7FFFFFFF
 SEAM = "\x00"  # 文書の継ぎ目 (評価では未知文字として自動的に除かれる)
 DET_DEFAULT = dict(photons=None, read=0.0, adc_bits=None, adc_fs=8.0)
 
 
-def _canon(grid=32, scales=(1, 2, 3, 4), tails=(), layers=3, dist=5e-3, wavelength=633e-9, pitch=20e-6, seed=0,
-           ref=0.0, taps=None, detector=None):
+def _canon(grid=32, scales=(1, 2, 3, 4), layers=3, dist=5e-3, wavelength=633e-9, pitch=20e-6, seed=0, detector=None,
+           **legacy):
+    """物理設定を正規化した dict にする。legacy: 以前の版の保存ファイルにある tails / ref / taps (既定値のときだけ受け付ける)。"""
     layers = int(layers)
-    taps = tuple(sorted(int(x) for x in (taps if taps else (layers,))))
-    if not all(1 <= x <= layers for x in taps):
-        raise ValueError(f"taps は 1〜layers({layers}) の範囲で指定してください: {taps}")
+    bad = {k: v for k, v in legacy.items()
+           if not ((k == "tails" and not v) or (k == "ref" and not v) or (k == "taps" and (not v or list(v) == [layers])))}
+    if bad:
+        raise ValueError(f"この版では使えない設定です (増強オプションは削除済み): {bad}")
     det = dict(DET_DEFAULT)
     det.update(detector or {})
-    return dict(grid=int(grid), scales=tuple(int(s) for s in scales), tails=tuple((int(t[0]), float(t[1]), (t[2] if len(t) > 2 else "pos")) for t in tails),
-                layers=layers, dist=float(dist), wavelength=float(wavelength), pitch=float(pitch), seed=int(seed),
-                ref=float(ref), taps=taps, detector=det)
+    return dict(grid=int(grid), scales=tuple(int(s) for s in scales), layers=layers, dist=float(dist),
+                wavelength=float(wavelength), pitch=float(pitch), seed=int(seed), detector=det)
 
 
-def grid_for_D(D, n_exposures, n_taps=1):
+def grid_for_D(D, n_exposures):
     """総特徴数 D にほぼ等しくなる grid を返す。"""
-    return max(2, int(round(math.sqrt((D - 1) / (n_exposures * n_taps)))))
+    return max(2, int(round(math.sqrt((D - 1) / n_exposures))))
 
 
 # ====================================================================== モデル本体 (numpy)
@@ -105,31 +102,21 @@ class OpticalLM:
                 cls = TorchOpticalLM
         return object.__new__(cls)
 
-    def __init__(self, grid=32, scales=(1, 2, 3, 4), tails=(), layers=3, dist=5e-3, wavelength=633e-9, pitch=20e-6,
-                 seed=0, ref=0.0, taps=None, detector=None, backend="numpy", device=None, acc=None):
-        c = self.cfg = _canon(grid, scales, tails, layers, dist, wavelength, pitch, seed, ref, taps, detector)
+    def __init__(self, grid=32, scales=(1, 2, 3, 4), layers=3, dist=5e-3, wavelength=633e-9, pitch=20e-6,
+                 seed=0, detector=None, backend="numpy", device=None, acc=None, **legacy):
+        c = self.cfg = _canon(grid, scales, layers, dist, wavelength, pitch, seed, detector, **legacy)
         G, L, seed = c["grid"], c["layers"], c["seed"]
         self.G, self.N, self.seed = G, G * G, seed
-        self.exps = []
-        for s in c["scales"]:
-            self.exps.append(dict(T=s, w=[1.0] * s))
-        for T, g, mode in c["tails"]:
-            if mode not in ("pos", "bag"):
-                raise ValueError(f"tails の mode は 'pos' か 'bag': {mode}")
-            self.exps.append(dict(T=T, w=[g ** k for k in range(T)], bag=(mode == "bag")))
-        for ex in self.exps:
-            ex["norm"] = float(sum(x * x for x in ex["w"]))
+        # 露光: 直近 T 文字を、位置ごとの位相板をかけて重ねる。norm = 期待強度 (= T)
+        self.exps = [dict(T=s, norm=float(s)) for s in c["scales"]]
         self.E, self.T = len(self.exps), max(ex["T"] for ex in self.exps)
-        self.ntap = len(c["taps"])
-        self.D = self.E * self.ntap * self.N + 1
+        self.D = self.E * self.N + 1
         rng = lambda *key: np.random.default_rng([seed, *key])
 
         # ---- 固定の物理 (学習しない) ----
         self.pos = [np.exp(1j * np.stack([rng(1, e, p).uniform(0, 2 * np.pi, self.N) for p in range(ex["T"])]))
                     for e, ex in enumerate(self.exps)]
         self.mask = [np.exp(1j * np.stack([rng(2, e, l).uniform(0, 2 * np.pi, (G, G)) for l in range(L)]))
-                     for e in range(self.E)]
-        self.refs = [np.exp(1j * np.stack([rng(4, e, t).uniform(0, 2 * np.pi, (G, G)) for t in range(self.ntap)]))
                      for e in range(self.E)]
         f = np.fft.fftfreq(G, d=c["pitch"])  # fft の並びそのまま
         FX, FY = np.meshgrid(f, f, indexing="ij")
@@ -154,7 +141,7 @@ class OpticalLM:
 
     # ------------------------------------------------------------ バックエンド (numpy)
     def _setup_backend(self):
-        self.p_pos, self.p_mask, self.p_ref, self.p_H = self.pos, self.mask, self.refs, self.H
+        self.p_pos, self.p_mask, self.p_H = self.pos, self.mask, self.H
         self.p_table = self.table
         self.fft2, self.ifft2 = np.fft.fft2, np.fft.ifft2
 
@@ -237,35 +224,22 @@ class OpticalLM:
         return I
 
     def _optics(self, xb):
-        """xb: (n, T) の table 行番号 -> カメラ強度の特徴 (n, D)。最後の列は定数1。"""
+        """xb: (n, T) の table 行番号 -> カメラ強度の特徴 (n, D)。最後の列は定数1 (バイアス)。"""
         c = self.cfg
-        n, G, N, rho = xb.shape[0], self.G, self.N, c["ref"]
+        n, G, N = xb.shape[0], self.G, self.N
         out = self._empty((n, self.D))
         out[:, -1] = 1.0
-        col = 0
         for e, ex in enumerate(self.exps):
-            Te, w = ex["T"], ex["w"]
+            Te = ex["T"]
             U = None
-            for k in range(Te):  # k=0 が直近の文字。位相板の番号は 08 と同じ (古い方が 0)
-                term = self.p_table[xb[:, -1 - k]]
-                if not ex.get("bag"):  # bag: 位置の位相板なし (どの位置に出たかは区別せず、直近の文字の『集まり』を重ねる)
-                    term = term * self.p_pos[e][Te - 1 - k]
-                if w[k] != 1.0:
-                    term = term * w[k]
+            for k in range(Te):  # k=0 が直近の文字。位置の位相板の番号は古い方が 0 (08 と同じ)
+                term = self.p_table[xb[:, -1 - k]] * self.p_pos[e][Te - 1 - k]
                 U = term if U is None else U + term
             U = U.reshape(n, G, G)
-            ti = 0
-            for l in range(1, c["layers"] + 1):
-                U = U * self.p_mask[e][l - 1]
-                U = self.ifft2(self.fft2(U) * self.p_H)
-                if l in c["taps"]:
-                    V = U + rho * self.p_ref[e][ti] if rho else U
-                    I = V.real ** 2 + V.imag ** 2
-                    m = ex["norm"] + rho * rho  # 期待強度
-                    I = self._detect(I, m)
-                    out[:, col:col + N] = (I.reshape(n, -1) - m) / ex["norm"]
-                    col += N
-                    ti += 1
+            for l in range(c["layers"]):  # 位相板 -> 自由空間伝播 (角スペクトル法)
+                U = self.ifft2(self.fft2(U * self.p_mask[e][l]) * self.p_H)
+            I = self._detect(U.real ** 2 + U.imag ** 2, ex["norm"])
+            out[:, e * N:(e + 1) * N] = (I.reshape(n, -1) - ex["norm"]) / ex["norm"]
         return out
 
     def features(self, rows, batch=128):
@@ -529,7 +503,7 @@ class OpticalLM:
         return m
 
     def __repr__(self):
-        return (f"<{type(self).__name__} 露光{self.E}x検出{self.ntap}x{self.G}x{self.G}画素 D={self.D} 窓{self.T}文字 "
+        return (f"<{type(self).__name__} 露光{self.E}x{self.G}x{self.G}画素 D={self.D} 窓{self.T}文字 "
                 f"語彙{len(self.chars)} 学習窓{self.n:.0f}>")
 
 
@@ -555,7 +529,6 @@ class TorchOpticalLM(OpticalLM):
     def _setup_backend(self):
         self.p_pos = [self._tt(p) for p in self.pos]
         self.p_mask = [self._tt(m) for m in self.mask]
-        self.p_ref = [self._tt(r) for r in self.refs]
         self.p_H = self._tt(self.H)
         self.p_table = self._tt(self.table)
         self.fft2, self.ifft2 = torch.fft.fft2, torch.fft.ifft2
@@ -972,7 +945,7 @@ def split_docs(docs, every=7, block=500):
 
 def train(source, val_every=7, refit_all=False, lams=(1e-4, 1e-3, 1e-2, 1e-1), max_chars=0, chunks=1, verbose=True,
           backend="auto", workers=0, threads=2, **cfg):
-    """ファイル(1行=1文書)から、分割・追加学習・正則化の選択・較正まで行う。cfg は OpticalLM の引数 (grid, scales, tails, ref, ...)。
+    """ファイル(1行=1文書)から、分割・追加学習・正則化の選択・較正まで行う。cfg は OpticalLM の引数 (grid, scales, ...)。
     refit_all=True: 選んだ設定で検証用の文書も学習に足して解き直す (データが約14%増える。較正はそのまま。
                     ただしこのモデルに対する検証値は、検証文書を学習済みなので甘くなる。最終版を作るときだけ使う)。
     返り値: (model, report)。report は検証での acc1/acc5/nll など。"""
@@ -1209,7 +1182,7 @@ def _fmt_bytes(b):
 
 def size_bench(source, d_list=(1024, 2048, 4096), scales=(1, 2, 3, 4), backend="auto", max_chars=0, chunks=1,
                w_bits=(16, 8, 6, 4), ranks=(64, 128, 256), lams=(1e-3, 1e-2), ng_orders=(2, 3, 4),
-               ng_min=(1, 2, 3, 5, 10), limit=20000, mix=True, w_group_bits=(5, 4, 3), ng_smoothing="wb", **cfg):
+               ng_min=(1, 2, 3, 5, 10), limit=20000, mix=True, w_group_bits=(5, 4, 3), ng_smoothing="kn", **cfg):
     """リザバー (D・W の精度・低ランク) と n-gram (文脈長・剪定) を、推論に必要なバイト数 vs 精度で並べる。
     n-gram のバイト数は『単純な表(8B/項目)』と『工夫した形式(4B/項目)』の2通りの見積もり。"""
     docs = read_docs(source, max_chars)
@@ -1232,7 +1205,7 @@ def size_bench(source, d_list=(1024, 2048, 4096), scales=(1, 2, 3, 4), backend="
                 ng_main = r["py"]
     base_py = None
     for D in d_list:
-        g = grid_for_D(D, len(scales) + len(cfg.get("tails", ())), len(cfg.get("taps") or (1,)))
+        g = grid_for_D(D, len(scales))
         t0 = time.time()
         m = OpticalLM(grid=g, scales=scales, backend=backend, **cfg)
         step = max(1, len(tr) // chunks)
@@ -1361,70 +1334,6 @@ def mix_compare(rows, base_name="n-gram 文脈3文字 剪定1"):
     return dict(add=add, pairs=pairs)
 
 
-# ====================================================================== 特徴の増強オプションの比較 (ablate)
-def ablate(source, D=4096, backend="auto", max_chars=0, chunks=1, lams=(1e-3, 1e-2), limit=20000, extra=True,
-           detector_runs=True, only=None):
-    """特徴の増強オプションを、同じ総特徴数 D で比べる。各行: 精度と、2種類の確率較正 (softmax / power) の NLL。
-    limit: 検証に使う文字数 (0 で検証文書の全部)。only: 構成の番号のリスト (0 が基本。基本は常に含める)。"""
-    docs = read_docs(source, max_chars)
-    tr, va = split_docs(docs)
-    print(f"文書 {len(docs)} (学習 {len(tr)} / 検証 {len(va)}) | 文字数 {sum(map(len, docs))} | 目標の総特徴数 D≈{D}")
-    S4 = (1, 2, 3, 4)
-    S3 = (1, 2, 3)
-    variants = [
-        ("基本 scales=(1,2,3,4)", dict(scales=S4)),
-        ("+参照光 ref=1", dict(scales=S4, ref=1.0)),
-        ("+多面検出 taps=(2,3)", dict(scales=S4, taps=(2, 3))),
-        ("長距離pos(入替) (1,2,3)+tail(16,.85)", dict(scales=S3, tails=((16, 0.85),))),
-        ("長距離bag(入替) (1,2,3)+tail(16,.85,bag)", dict(scales=S3, tails=((16, 0.85, "bag"),))),
-        ("長距離bag(入替)+参照光", dict(scales=S3, tails=((16, 0.85, "bag"),), ref=1.0)),
-        ("長距離bag(追加) (1,2,3,4)+tail(32,.93,bag)+参照光", dict(scales=S4, tails=((32, 0.93, "bag"),), ref=1.0)),
-    ]
-    if extra:
-        variants += [
-            ("組合せ: bag(入替)+参照光+多面検出", dict(scales=S3, tails=((16, 0.85, "bag"),), ref=1.0, taps=(2, 3))),
-        ]
-    if detector_runs:
-        variants += [
-            ("検出器: ADC 8bit", dict(scales=S4, detector=dict(adc_bits=8))),
-            ("検出器: ADC 4bit", dict(scales=S4, detector=dict(adc_bits=4))),
-            ("検出器: 光子 1000/画素", dict(scales=S4, detector=dict(photons=1000))),
-            ("検出器: 光子 100/画素", dict(scales=S4, detector=dict(photons=100))),
-            ("検出器: 光子 100 + ADC 6bit", dict(scales=S4, detector=dict(photons=100, adc_bits=6))),
-        ]
-    if only:
-        variants = [v for i, v in enumerate(variants) if i == 0 or i in set(only)]
-    out = []
-    print(f"{'構成':<40}{'D':>7}{'train':>7}{'acc1':>7}{'acc5':>7}{'nll(softmax)':>13}{'nll(power)':>11}{'秒':>6}")
-    for name, kw in variants:
-        t0 = time.time()
-        E = len(kw["scales"]) + len(kw.get("tails", ()))
-        g = grid_for_D(D, E, len(kw.get("taps") or (1,)))
-        m = OpticalLM(grid=g, backend=backend, **kw)
-        step = max(1, len(tr) // chunks)
-        for i in range(chunks):
-            m.fit(tr[i * step:(i + 1) * step if i < chunks - 1 else len(tr)])
-        best = sweep_lam(m, va, lams, limit, verbose=False)
-        calibrate(m, va, limit, verbose=False)
-        tab = m.cal_table
-        tl = limit or 100000  # 学習側の精度 (過学習の目安) は全窓でなくてよい
-        t1 = evaluate(m, "".join(tr[:max(1, len(tr) // 4)])[:tl], tl)["acc1"]
-        r = dict(name=name, D=m.D, train=t1, acc1=best["acc1"], acc5=best["acc5"], nll_s=tab["softmax"]["nll"],
-                 nll_p=tab["power"]["nll"], sec=time.time() - t0, n=best["n"])
-        out.append(r)
-        print(f"{name:<40}{r['D']:>7}{r['train']:>7.1f}{r['acc1']:>7.1f}{r['acc5']:>7.1f}{r['nll_s']:>13.3f}{r['nll_p']:>11.3f}{r['sec']:>6.0f}")
-        del m
-    base = out[0]
-    print("\n基本との差 (acc1 / acc5 / 良い方の nll):")
-    for r in out[1:]:
-        print(f"  {r['name']:<40}{r['acc1'] - base['acc1']:>+6.1f}{r['acc5'] - base['acc5']:>+7.1f}"
-              f"{min(r['nll_s'], r['nll_p']) - min(base['nll_s'], base['nll_p']):>+8.3f}")
-    n_val = base["n"]
-    se = 100 * math.sqrt(0.25 / max(n_val, 1))
-    print(f"  (検証 {n_val}窓。acc1 の標準誤差は最大で約 ±{se:.2f} ポイント。差がその2倍以内なら無視してください)")
-    return out
-
-
 # ====================================================================== 動作確認
 def _ref08_features(m, X, grid, scales, layers=3, dist=5e-3, wavelength=633e-9, pitch=20e-6, seed=0):
     """08 の features() と同じ式を、このファイルの実装に依存せずに書いたもの (後方互換の照合用)。"""
@@ -1463,8 +1372,7 @@ def selftest(verbose=True):
     rel = lambda a, b: float(np.abs(a - b).max() / max(np.abs(a).max(), 1e-300))
     cfgs = {
         "基本": dict(grid=8, scales=(1, 2, 3)),
-        "全部入り": dict(grid=8, scales=(1, 2), tails=((10, 0.8), (12, 0.9, "bag")), ref=1.0, taps=(2, 3),
-                      detector=dict(adc_bits=8)),
+        "検出器あり": dict(grid=8, scales=(1, 2), detector=dict(adc_bits=8)),
     }
     for tag, cfg in cfgs.items():
         print(f"[{tag}] {cfg}")
@@ -1525,7 +1433,7 @@ def selftest(verbose=True):
               f"(相対誤差 {rel(a.W, r.W):.2e})")
         os.remove(path)
 
-    print("[後方互換] 既定の物理設定 (tails/ref/taps なし) で、08 の式を独立に書き直したものと同じ特徴か")
+    print("[後方互換] 08 (sin-cnn_reservoir08.py) の式を独立に書き直したものと同じ特徴か")
     text = mk_text(400)
     grid, sc = 8, (1, 2, 4, 8)
     m = OpticalLM(grid=grid, scales=sc)
@@ -1601,9 +1509,6 @@ def _cli(argv):
     for p in (t,):
         p.add_argument("--grid", type=int, default=32)
         p.add_argument("--scales", default="1,2,3,4")
-        p.add_argument("--tails", default="", help="例: 16:0.85,32:0.93:bag")
-        p.add_argument("--ref", type=float, default=0.0)
-        p.add_argument("--taps", default="")
         p.add_argument("--max-chars", type=int, default=0)
         p.add_argument("--chunks", type=int, default=1)
         p.add_argument("--w-bits", type=int, default=32)
@@ -1631,26 +1536,17 @@ def _cli(argv):
     b.add_argument("--max-chars", type=int, default=0)
     b.add_argument("--no-mix", action="store_true", help="混合の公平な比較 (mix_compare) を省く")
     b.add_argument("--ng-min", default="1,2,3,5,10", help="n-gram の剪定 (出現がこの回数未満の項目を捨てる) の一覧")
-    b.add_argument("--ng-smoothing", default="wb", choices=("wb", "kn"), help="比較相手の n-gram の平滑化 (kn の方が強い)")
+    b.add_argument("--ng-smoothing", default="kn", choices=("wb", "kn"),
+                   help="比較相手の n-gram の平滑化 (kn: Kneser-Ney、wb: Witten-Bell。kn の方が強い)")
     b.add_argument("--gpu", action="store_true")
-    a = sub.add_parser("ablate")
-    a.add_argument("corpus")
-    a.add_argument("--d", type=int, default=4096)
-    a.add_argument("--max-chars", type=int, default=0)
-    a.add_argument("--no-detector", action="store_true")
-    a.add_argument("--limit", type=int, default=20000, help="検証に使う文字数 (0 で検証文書の全部)")
-    a.add_argument("--variants", default="", help="比べる構成の番号 (例: 1,4,5。0=基本は常に含む)")
-    a.add_argument("--gpu", action="store_true")
     ns = ap.parse_args(argv)
     be = lambda gpu: "torch" if gpu else "numpy"
     if ns.cmd == "selftest":
         selftest()
     elif ns.cmd == "train":
-        tails = tuple((int(x.split(":")[0]), float(x.split(":")[1])) + tuple(x.split(":")[2:3]) for x in ns.tails.split(",") if x)
-        taps = tuple(int(x) for x in ns.taps.split(",") if x) or None
         t0 = time.time()
-        model, rep = train(ns.corpus, grid=ns.grid, scales=tuple(int(x) for x in ns.scales.split(",")), tails=tails, ref=ns.ref,
-                           taps=taps, max_chars=ns.max_chars, chunks=ns.chunks, backend=be(ns.gpu), refit_all=ns.refit,
+        model, rep = train(ns.corpus, grid=ns.grid, scales=tuple(int(x) for x in ns.scales.split(",")),
+                           max_chars=ns.max_chars, chunks=ns.chunks, backend=be(ns.gpu), refit_all=ns.refit,
                            workers=ns.workers, threads=ns.threads)
         print(f"検証 acc1 {rep['acc1']:.1f} acc5 {rep['acc5']:.1f} nll {rep['nll']:.3f} (較正 {rep['cal']['kind']}) | {time.time() - t0:.0f}s")
         model.save(ns.out, stats=not ns.no_stats, w_bits=ns.w_bits, w_group=ns.w_group)
@@ -1668,9 +1564,6 @@ def _cli(argv):
         size_bench(ns.corpus, d_list=tuple(int(x) for x in ns.d.split(",")), scales=tuple(int(x) for x in ns.scales.split(",")),
                    backend=be(ns.gpu), max_chars=ns.max_chars, mix=not ns.no_mix,
                    ng_min=tuple(int(x) for x in ns.ng_min.split(",")), ng_smoothing=ns.ng_smoothing)
-    elif ns.cmd == "ablate":
-        ablate(ns.corpus, D=ns.d, backend=be(ns.gpu), max_chars=ns.max_chars, detector_runs=not ns.no_detector,
-               limit=ns.limit, only=[int(x) for x in ns.variants.split(",") if x])
     else:
         ap.print_help()
 

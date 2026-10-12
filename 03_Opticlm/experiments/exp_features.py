@@ -11,10 +11,13 @@ python exp_features.py corpus.txt [--d 4096] [--modes optics,nodiff,cascade,rff,
   prod    : cos(Σ_k θ_k[文字] + b) (θ は一様乱数の位相)。窓の文字列が完全に一致するときだけ似る = ハッシュ化した n-gram
 """
 import argparse
+import os
+import sys
 import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))  # opticlm.py は1つ上
 import opticlm as O
 
 torch = O.torch

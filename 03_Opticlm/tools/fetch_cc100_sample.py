@@ -186,8 +186,7 @@ def main():
     if total < target:
         print(f"\n目標の {target} 文字に届きませんでした。--max-mb を増やすか --min-doc を下げてください。")
     print(f"\n書き出し: {out}")
-    print("次は:  python prepare_corpus.py " + out + "   (偏りの診断)   ->   python sin-cnn_reservoir08.py "
-          + out + " 32 0 1,2,4,8 doc")
+    print("次は:  python tools/prepare_corpus.py " + out + " 出力.txt --min-count 1000   (整形と偏りの診断)")
 
 
 if __name__ == "__main__":

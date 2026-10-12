@@ -2,10 +2,13 @@
 python exp_seed_cpu.py corpus.txt --seeds 1,2 --d 4096 [--workers 3 --threads 2]
 学習は fit_parallel (子プロセスの優先度は低い)。このプロセス自身も優先度を下げる。"""
 import argparse
+import os
+import sys
 import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))  # opticlm.py は1つ上
 import opticlm as O
 
 if __name__ == "__main__":

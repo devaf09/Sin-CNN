@@ -10,10 +10,13 @@ python exp_robust.py model.npz corpus.txt [--gpu] [--limit 20000] [--parts group
 各行で較正 (calibrate) はやり直す (実機でも検証データで較正できる想定)。
 """
 import argparse
+import os
+import sys
 import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))  # opticlm.py は1つ上
 import opticlm as O
 
 

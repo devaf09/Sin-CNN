@@ -1,4 +1,4 @@
-"""opticlm の使用例。  python opticlm_example.py [corpus.txt]   (省略時は組み込みの短い文で動作確認)
+"""opticlm の使用例。  python example.py [corpus.txt]   (省略時は組み込みの短い文で動作確認)
 GPU があれば backend="auto" で自動的に GPU を使う。"""
 import sys
 
@@ -30,8 +30,14 @@ lm.solve(1e-3)           # 解き直し
 lm.forget(extra)         # 取り消し (fit のときと同じ文章を渡す)
 lm.solve(1e-3)
 
+# 融合: 同じ物理設定 (cfg) で別に学習したモデルの統計量を足す
+other = opticlm.OpticalLM(**lm.cfg, backend="numpy")
+other.fit("別の場所で学習した文章です。" * 10)
+lm.merge(other)
+lm.solve(1e-3)
+
 # --- 保存 ---
-lm.save("example_state.npz")                           # 統計量つき (追加学習できる)
-lm.save("example_infer.npz", stats=False, w_bits=8)    # 推論専用 (W を 8bit に)
+lm.save("example_state.npz")                                       # 統計量つき (追加学習できる)
+lm.save("example_infer.npz", stats=False, w_bits=4, w_group=256)   # 推論専用 (W を 4bit + グループごとのスケールに)
 small = opticlm.load("example_infer.npz")
-print("8bit 版の予測:", small.predict("今日は", k=3))
+print("4bit 版の予測:", small.predict("今日は", k=3))
